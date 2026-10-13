@@ -177,6 +177,6 @@ Direção de áudio
 Murder King é um jogo cooperativo de gerenciamento de comida onde você e seus amigos precisam sobreviver à hora do rush. Prepare pedidos, administre seu carrinho e use comida como arma para impedir que clientes famintos destruam seu negócio.
 
 Em uma frase: Overcooked encontra um tower defense, mas os zumbis são pessoas com fome.
-<h1>📌 Status do projeto/h1>
+<h1>📌 Status do projeto </h1>
 Este README resume os conceitos definidos no Game Design Document (GDD) v2.0. Ele descreve a visão e os sistemas planejados para o jogo; não significa que todas as mecânicas já estejam implementadas.
 Para detalhes completos de regras, atributos de armas, exemplos e sistemas, consulte o GDD.
