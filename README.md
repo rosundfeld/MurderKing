@@ -1,4 +1,4 @@
-<h1>Murder King
+<h1>Murder King</h1>
 <h5>Não é um apocalipse zumbi. É segunda-feira na hora do almoço.</h5> 
 
 <p>Murder King é um jogo cooperativo de gerenciamento de comida, minigames e defesa caótica. De 1 a 4 jogadores administram um carrinho de comida em uma cidade aparentemente normal — até que a fome transforma trabalhadores, estudantes e cidadãos em uma multidão desesperada por um lanche.
@@ -22,8 +22,8 @@ Os clientes podem parecer zumbis, mas não são monstros: basta receberem comida
 - 📣 Pitch
 - 📌 Status do projeto
 	
-🎮 Visão geral
-	
+
+<h1>🎮 Visão geral</h1>
 Gênero	Cooperativo local/online, gerenciamento de restaurante/carrinho, minigames e defesa caótica
 Jogadores	1–4
 Perspectiva recomendada	Top-down
