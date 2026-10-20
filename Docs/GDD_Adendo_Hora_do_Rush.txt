@@ -1,0 +1,224 @@
+MURDER KING
+Game Design Document — Adendo v2.1 (Hora do Rush, Alimentar na Bala, Economia)
+==============================================================================
+
+Este adendo complementa o GDD v2.0. Cada bloco indica a seção do GDD que ele
+altera ou estende. Os valores entre colchetes são os usados na POC atual e
+servem de ponto de partida para balanceamento.
+
+
+------------------------------------------------------------------------------
+3. Loop de Jogo — NOVO: Calmaria e Hora do Rush dentro de cada período
+------------------------------------------------------------------------------
+
+O tempo da partida define o ritmo.
+
+Cada período de atendimento é dividido em duas fases:
+
+Calmaria (primeira metade do tempo)  [0% a 50% da partida]
+
+  O ritmo é tranquilo.
+  Poucos clientes chegam, e chegam com pouca fome.
+  É o momento da cozinha:
+  ● Preparar pedidos com calma.
+  ● Atender bem e ganhar gorjeta.
+  ● Fazer caixa.
+  ● Preparar munição para o rush (carne cozida).
+
+  Valores POC:
+  ● Um cliente a cada [8 s].
+  ● Fome inicial entre [0 e 15] (barra vai até 120).
+
+Hora do Rush (segunda metade do tempo)  [50% a 100% da partida]
+
+  A cidade sai para almoçar ao mesmo tempo.
+  Faz sentido ABANDONAR A COZINHA e partir para o combate com as armas de comida.
+
+  ● O rush começa com uma leva imediata de clientes.
+  ● Os clientes chegam com PELO MENOS METADE DA BARRA DE FOME.
+    [60 a 75 de 120 → já chegam "Desesperados", a poucos segundos de "Furioso"]
+  ● Um cliente a cada [2,5 s], acelerando até [1 s] no fim do rush.
+  ● Levas extras a cada [20 s], de [4] clientes crescendo até [8].
+
+  Aviso na tela: "HORA DO RUSH! larguem a cozinha e peguem a ShotDog".
+
+Depois do rush → Calmaria novamente
+
+  No ciclo completo do dia (Manhã / Almoço / Tarde / Noite / Madrugada),
+  cada pico (Almoço, Noite) segue o padrão:
+
+      Calmaria  →  Hora do Rush  →  Calmaria
+
+  Na POC, uma partida = uma Calmaria + uma Hora do Rush [4 minutos no total].
+  O retorno à calmaria e o encadeamento dos períodos ficam para a próxima etapa.
+
+Resumo da intenção de design:
+
+  Calmaria = cozinha + economia.
+  Rush     = sobrevivência + armas.
+
+
+------------------------------------------------------------------------------
+5. Objetivo do Jogador — ALTERADO: "Conter" vira "Alimentar na bala"
+------------------------------------------------------------------------------
+
+No GDD v2.0, as armas eram uma forma de CONTER (afastar/desacelerar) o cliente.
+
+Agora: A ARMA ALIMENTA O CLIENTE POR COMPLETO.
+
+O cliente atingido por comida fica saciado na hora, agradece e vai embora,
+exatamente como se tivesse recebido o pedido.
+O knockback continua existindo (é o "lado cômico" do tiro).
+
+As maneiras de lidar com um cliente passam a ser:
+
+  Alimentar no prato
+    Preparar e entregar o pedido certo.
+    Paga o valor cheio + gorjeta.
+    Ideal na Calmaria.
+
+  Alimentar na bala
+    Acertar o cliente com uma arma de comida.
+    Resolve o cliente na hora, mas paga MUITO MENOS.
+    Ideal no Rush.
+
+  Ignorar
+    A fome e a raiva aumentam até o cliente atacar o carrinho.
+    Continua sendo a opção mais perigosa.
+
+Isso reforça a regra fundamental do GDD: o objetivo nunca é machucar o
+cliente. A arma é só um jeito muito rápido (e muito pouco educado) de servir.
+
+Impacto na seção 6 (Fome e Raiva):
+  O item "Raiva aumenta quando o cliente é atingido por determinados
+  equipamentos" deixa de valer para armas que alimentam. Pode voltar para
+  armas/defesas que NÃO alimentam (ex.: barreiras, armadilhas).
+
+
+------------------------------------------------------------------------------
+8. Armas de Comida — ShotDog (como está na POC)
+------------------------------------------------------------------------------
+
+  ● Disparo em cone à frente do jogador.  [alcance 7 m, abertura 60°]
+  ● Todo cliente com fome dentro do cone é alimentado por completo.
+  ● Knockback alto.
+  ● Pente pequeno.                         [6 tiros, cadência 1 tiro / 0,7 s]
+  ● Começa a partida com o pente cheio.
+
+Munição = estoque da cozinha   (DECIDIDO)
+
+  Regra geral para todas as armas: cada arma recarrega com o seu
+  respectivo ingrediente, segurado na mão. A comida vira munição.
+  (ShotDog → carne/hot dog, Frieschinegun → batata frita, Kebab Sword →
+  carne do espeto, RPieG → torta, Soda Flamethrower → refrigerante...)
+
+  ShotDog — recarregar [R] consome a comida que o jogador está segurando:
+  ● Carne cozida   → +3 tiros
+  ● Carne queimada → +2 tiros   (a carne que queimou finalmente tem uso)
+
+  Dilema central (seção 9 do GDD, agora mais forte):
+  "Essa carne vira hambúrguer (dinheiro) ou vira munição (sobrevivência)?"
+
+  Atirar sem acertar ninguém gasta o tiro do mesmo jeito.
+
+
+------------------------------------------------------------------------------
+NOVO — UI de Munição
+------------------------------------------------------------------------------
+
+Problema observado no teste: não estava claro por que a munição acabava.
+
+Painel fixo no canto inferior direito:
+  ● "SHOTDOG 4/6" + um ícone por tiro (cheio / vazio; vermelho quando zera).
+  ● Aviso "SEM MUNIÇÃO".
+  ● Dica permanente: o que a arma faz e com o que recarrega.
+  ● Histórico das últimas mudanças de munição, explicando cada uma:
+      "-1 tiro (alimentou 3 clientes) · restam 4"
+      "-1 tiro (errou, ninguém no cone) · restam 3"
+      "+3 recarga (Carne cozida virou munição) · agora 6"
+      "Recarga: mão vazia. Segure Carne cozida (+3) ou Carne queimada (+2)"
+      "Recarga: Pão não é munição..."
+      "Recarga: pente já está cheio"
+      "Sem munição! Segure ... e aperte [R]"
+
+Princípio: toda mudança de recurso precisa ter um motivo visível na tela.
+
+
+------------------------------------------------------------------------------
+14. Progressão e Economia — NOVO: Caixa da equipe
+------------------------------------------------------------------------------
+
+O dinheiro é compartilhado pela equipe (um caixa por carrinho).
+
+A economia é gerada MAJORITARIAMENTE NA CALMARIA, com pratos de verdade.
+Durante o Rush, alimentar clientes na bala rende bem menos, até a calmaria
+voltar.
+
+Valor de um prato
+  Preço do pedido = [5] por ingrediente.   (Hambúrguer: pão + carne = 10)
+  Gorjeta por paciência:
+  ● Cliente Normal  → +[50%]
+  ● Cliente Faminto → +[25%]
+  ● Desesperado ou pior → sem gorjeta.
+
+Valor na bala
+  [20%] do preço do pedido, sem gorjeta.   (Hambúrguer na bala = 2)
+  Na POC o percentual pode ser diferente na Calmaria e no Rush
+  (hoje os dois estão em 20%).
+
+Pedido errado: não paga nada (e aumenta a raiva do cliente).
+
+UI
+  ● Caixa sempre visível no HUD.
+  ● Feed de ganhos no canto superior direito:
+      "+$15 prato (com gorjeta)"   /   "+$2 na bala"
+  ● Tela final: faturamento total, separado em pratos x bala.
+
+Leitura de design esperada
+  Um time que só atira sobrevive, mas termina pobre.
+  Um time que só cozinha fatura bem na calmaria, mas não segura o rush.
+  O time ideal cozinha e guarda munição na calmaria, e atira no rush.
+
+
+------------------------------------------------------------------------------
+21. Condição de Derrota (sem mudanças, só registrando a POC)
+------------------------------------------------------------------------------
+
+  ● Clientes Furiosos saem da fila e atacam o carrinho. [1,5 de dano/s]
+  ● Clientes em Colapso causam o dobro. [3 de dano/s]
+  ● Carrinho em 0% → derrota.
+  ● Sobreviver até o fim do Rush → vitória.
+
+
+------------------------------------------------------------------------------
+PONTOS EM ABERTO (para decidir)
+------------------------------------------------------------------------------
+
+1. Munição no Rush
+   DECIDIDO: recarregar segurando o ingrediente respectivo da arma.
+   Ainda em aberto: como garantir ingrediente pronto durante o rush,
+   já que o jogador só segura um item por vez?
+   a) Estoque preparado na Calmaria (um balcão/bandeja que guarda várias
+      carnes cozidas para recarga rápida).
+   b) Um jogador continua na cozinha só produzindo munição.
+   c) Pente maior como upgrade (seção 15), para depender menos de recargas.
+
+2. Gastos
+   Hoje o dinheiro só entra. Onde ele sai?
+   (Investimentos da seção 15: comprar ingredientes, upgrades, reparar o
+   carrinho, comprar armas novas, pente maior...)
+
+3. Bala na Calmaria
+   Usar a arma na calmaria deve ser punido além do valor baixo?
+   (Ex.: review ruim — "O atendimento foi rápido, mas o dono atirou
+   hambúrguer em mim.")
+
+4. Reviews/Reputação (seções 14 e 18)
+   Alimentar na bala deveria gerar reviews piores do que o prato?
+
+5. Proporção Calmaria x Rush
+   50/50 é o ponto de partida. Testar 60/40 e 40/60.
+
+6. Outras armas
+   As demais armas (Frieschinegun, Kebab Sword, RPieG, Soda Flamethrower)
+   também alimentam por completo? Ou só algumas, e as outras apenas contêm?

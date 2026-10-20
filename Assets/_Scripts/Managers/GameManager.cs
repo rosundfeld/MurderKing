@@ -38,7 +38,7 @@ public class GameManager : NetworkBehaviour
     private Dictionary<ulong, bool> playerPausedDictionary;
     private bool isLocalPlayerReady;
     private bool isLocalGamePaused = false;
-    private float gamePlayingTimerMax = 90f;
+    [SerializeField] private float gamePlayingTimerMax = 240f;
     private bool autoTestGamePausedState;
 
     [SerializeField] private Transform playerPrefab;
@@ -204,6 +204,12 @@ public class GameManager : NetworkBehaviour
         return state.Value == State.GameOver;
     }
 
+    //Server only: ends the run early (e.g. the cart was destroyed)
+    public void TriggerGameOver()
+    {
+        state.Value = State.GameOver;
+    }
+
     public bool IsWaitingToStart()
     {
         return state.Value == State.WaitingToStart;
@@ -218,6 +224,16 @@ public class GameManager : NetworkBehaviour
     public Vector3 GetSpawnPosition(int playerIndex, Vector3 fallback)
     {
         return playerIndex < spawnPoints.Length ? spawnPoints[playerIndex].position : fallback;
+    }
+
+    public float GetGamePlayingTimerMax()
+    {
+        return gamePlayingTimerMax;
+    }
+
+    public float GetGamePlayingTimeRemaining()
+    {
+        return Mathf.Max(0f, gamePlayingTimer.Value);
     }
 
     public float GetGamePlayingTimerNormalized()

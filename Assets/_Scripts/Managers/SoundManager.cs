@@ -32,6 +32,60 @@ public class SoundManager : MonoBehaviour
         TrashCounter.OnAnyObjectTrashed += TrashCounter_OnAnyObjectTrashed;
         Player.OnAnyPickedSomething += Player_OnPickedSomething;
         BaseCounter.OnAnyObjectPlacedHere += BaseCounter_OnAnyObjectPlacedHere;
+
+        if (CustomerManager.Instance != null)
+        {
+            CustomerManager.Instance.OnCustomerReaction += CustomerManager_OnCustomerReaction;
+            CustomerManager.Instance.OnBurst += CustomerManager_OnBurst;
+            CustomerManager.Instance.OnRushHourStarted += CustomerManager_OnBurst;
+        }
+        if (CartHealth.Instance != null)
+        {
+            CartHealth.Instance.OnDamaged += CartHealth_OnDamaged;
+        }
+    }
+
+    //------------------------------Rush Events---------------------------------
+    private void CustomerManager_OnCustomerReaction(object sender, CustomerManager.OnCustomerReactionEventArgs e)
+    {
+        switch (e.reaction)
+        {
+            case CustomerManager.Reaction.Fed:
+                PlaySound(audioClipRefsSO.deliverySuccess, e.position);
+                break;
+            case CustomerManager.Reaction.FedByGun:
+                PlaySound(audioClipRefsSO.deliverySuccess, e.position, 0.4f);
+                break;
+            case CustomerManager.Reaction.WrongOrder:
+            case CustomerManager.Reaction.DeliveryFailed:
+                PlaySound(audioClipRefsSO.deliveryFail, e.position);
+                break;
+        }
+    }
+
+    private void CustomerManager_OnBurst(object sender, System.EventArgs e)
+    {
+        PlaySound(audioClipRefsSO.warning, Camera.main.transform.position);
+    }
+
+    private void CartHealth_OnDamaged(object sender, System.EventArgs e)
+    {
+        PlaySound(audioClipRefsSO.objectDrop, CartHealth.Instance.transform.position, 2f);
+    }
+
+    public void PlayShotDogSound(Vector3 position)
+    {
+        PlaySound(audioClipRefsSO.trash, position, 2f);
+    }
+
+    public void PlayReloadSound(Vector3 position)
+    {
+        PlaySound(audioClipRefsSO.objectPickup, position);
+    }
+
+    public void PlayEmptyGunSound(Vector3 position)
+    {
+        PlaySound(audioClipRefsSO.objectDrop, position, 0.5f);
     }
 
     //------------------------------Player Events---------------------------------

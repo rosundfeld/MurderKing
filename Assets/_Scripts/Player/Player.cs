@@ -37,8 +37,14 @@ public class Player : NetworkBehaviour, IKitchenObjectParent
     private bool isWalking;
     private Vector3 lastInteractDir;
     private BaseCounter selectedCounter;
+    private PlayerShotDog shotDog;
 
     //---------------UNITY METHODS-----------------
+
+    private void Awake()
+    {
+        shotDog = GetComponent<PlayerShotDog>();
+    }
 
     public override void OnNetworkSpawn()
     {
@@ -94,15 +100,27 @@ public class Player : NetworkBehaviour, IKitchenObjectParent
             Debug.Log("Interacting with counter: " + selectedCounter.name);
             selectedCounter.Interact(this);
         }
+        else if (IsOwner && CustomerManager.Instance != null && HasKitchenObject()
+            && GetKitchenObject().TryGetPlate(out PlateKitchenObject plateKitchenObject)
+            && CustomerManager.Instance.HasCustomerInReach(transform.position))
+        {
+            //Hand the plate straight to the nearest customer
+            CustomerManager.Instance.DeliverPlate(plateKitchenObject, this, true);
+        }
     }
 
     private void GameInput_OnInteractAlternateAction(object sender, System.EventArgs e)
     {
         if (!GameManager.Instance.IsGamePlaying())
             return;
-        if (selectedCounter != null)
+        //Fire cuts on a cutting counter and shoots the ShotDog anywhere else
+        if (selectedCounter is CuttingCounter)
         {
             selectedCounter.InteractAlternate(this);
+        }
+        else if (shotDog != null)
+        {
+            shotDog.TryFire();
         }
     }
 

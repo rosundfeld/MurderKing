@@ -66,6 +66,7 @@ public class GameInput : MonoBehaviour
         playerInputActions.Player.Reload.performed -= Reload_performed;
         playerInputActions.Player.Pause.performed -= Pause_performed;
 
+        playerInputActions.Player.Disable();
         playerInputActions.Dispose();
     }
 

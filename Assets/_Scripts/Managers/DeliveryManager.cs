@@ -34,7 +34,8 @@ public class DeliveryManager : NetworkBehaviour
 
     private void Update()
     {
-        if (!IsServer) return;
+        //In rush mode the orders come from CustomerManager
+        if (!IsServer || CustomerManager.Instance != null) return;
 
         spawnRecipeTimer -= Time.deltaTime;
         if (spawnRecipeTimer <= 0f)

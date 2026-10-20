@@ -17,6 +17,14 @@ public class DeliveryCounter : BaseCounter
         {
             if(player.GetKitchenObject().TryGetPlate(out PlateKitchenObject plateKitchenObject))
             {
+                if (CustomerManager.Instance != null)
+                {
+                    //Rush mode: orders belong to customers; the server validates and destroys the plate
+                    CustomerManager.Instance.DeliverPlate(plateKitchenObject, player, false);
+                    return;
+                }
+
+
                 DeliveryManager.Instance.DeliverRecipe(plateKitchenObject);
 
                 KitchenObject.DestroyKitchenObject(player.GetKitchenObject());
