@@ -1,20 +1,20 @@
-using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-//Local player's ShotDog: shell counter, one icon per shell, empty warning and the log explaining every ammo change
-public class ShotDogAmmoUI : MonoBehaviour
+//Local player's gun: weapon name and icon, ammo counter and one icon per shell. Driven only by PlayerGun events.
+public class PlayerGunUI : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI shellsText;
     [SerializeField] private Transform shellContainer;
     [SerializeField] private Image shellTemplate;
-    //[SerializeField] private FeedLinesUI ammoFeedLinesUI;
+    [SerializeField] private TextMeshProUGUI weaponNameText;
+    [SerializeField] private Image weaponIconImage;
     [SerializeField] private Color shellFullColor = new Color(0.85f, 0.35f, 0.2f);
     [SerializeField] private Color shellEmptyColor = new Color(1f, 1f, 1f, 0.15f);
 
-    private PlayerShotDog shotDog;
+    private PlayerGun playerGun;
     private readonly List<Image> shellImageList = new List<Image>();
 
     private void Awake()
@@ -24,70 +24,68 @@ public class ShotDogAmmoUI : MonoBehaviour
 
     private void Start()
     {
-        //Hidden until the local player (and its ShotDog) exists
+        //Hidden until the local player's gun exists
         Hide();
-        if (Player.LocalInstance != null)
+        if (PlayerGun.LocalInstance != null)
         {
-            BindPlayer(Player.LocalInstance);
+            Bind(PlayerGun.LocalInstance);
         }
         else
         {
-            Player.OnAnyPlayerSpawned += Player_OnAnyPlayerSpawned;
+            PlayerGun.OnLocalInstanceSpawned += Bind;
         }
     }
 
     private void OnDestroy()
     {
-        Player.OnAnyPlayerSpawned -= Player_OnAnyPlayerSpawned;
-    }
-
-    private void Player_OnAnyPlayerSpawned(object sender, EventArgs e)
-    {
-        if (Player.LocalInstance != null && shotDog == null)
+        PlayerGun.OnLocalInstanceSpawned -= Bind;
+        if (playerGun != null)
         {
-            BindPlayer(Player.LocalInstance);
+            playerGun.OnActiveWeaponChanged -= PlayerGun_OnActiveWeaponChanged;
+            playerGun.OnAmmoChanged -= PlayerGun_OnAmmoChanged;
         }
     }
 
-    private void BindPlayer(Player player)
+    private void Bind(PlayerGun playerGun)
     {
-        if (!player.TryGetComponent(out shotDog))
-        {
-            return;
-        }
+        this.playerGun = playerGun;
+        playerGun.OnActiveWeaponChanged += PlayerGun_OnActiveWeaponChanged;
+        playerGun.OnAmmoChanged += PlayerGun_OnAmmoChanged;
 
-        shotDog.OnShellsChanged += ShotDog_OnShellsChanged;
-        shotDog.OnAmmoEvent += ShotDog_OnAmmoEvent;
-
-        for (int i = 0; i < shotDog.GetMagazineSize(); i++)
-        {
-            Image shellImage = Instantiate(shellTemplate, shellContainer);
-            shellImage.gameObject.SetActive(true);
-            shellImageList.Add(shellImage);
-        }
-
-        UpdateVisual();
+        //Initial state, read once
+        Weapon activeWeapon = playerGun.GetActiveWeapon();
+        PlayerGun_OnActiveWeaponChanged(activeWeapon);
+        PlayerGun_OnAmmoChanged(activeWeapon.GetAmmoData());
         Show();
     }
 
-    private void ShotDog_OnShellsChanged(object sender, EventArgs e)
+    private void PlayerGun_OnActiveWeaponChanged(Weapon weapon)
     {
-        UpdateVisual();
+        //Both are new fields: null until they are wired in the Inspector, and the ammo counter must keep working
+        if (weaponNameText != null)
+        {
+            weaponNameText.text = weapon.Data.weaponName;
+        }
+        if (weaponIconImage != null)
+        {
+            weaponIconImage.sprite = weapon.Data.weaponIcon;
+            weaponIconImage.enabled = weapon.Data.weaponIcon != null;
+        }
     }
 
-    private void ShotDog_OnAmmoEvent(object sender, PlayerShotDog.OnAmmoEventArgs e)
+    private void PlayerGun_OnAmmoChanged(AmmoData ammoData)
     {
-        //ammoFeedLinesUI.AddLine(e.isWarning ? $"<color=#FF8080>{e.message}</color>" : e.message);
-    }
+        shellsText.text = $"{ammoData.ammoInClip}/{ammoData.clipSize}";
 
-    private void UpdateVisual()
-    {
-        int shells = shotDog.GetShells();
-        shellsText.text = $"{shells}/{shotDog.GetMagazineSize()}";
-
+        //Clip sizes differ between weapons: grow the pool as needed and hide what is left over
+        while (shellImageList.Count < ammoData.clipSize)
+        {
+            shellImageList.Add(Instantiate(shellTemplate, shellContainer));
+        }
         for (int i = 0; i < shellImageList.Count; i++)
         {
-            shellImageList[i].color = i < shells ? shellFullColor : shellEmptyColor;
+            shellImageList[i].gameObject.SetActive(i < ammoData.clipSize);
+            shellImageList[i].color = i < ammoData.ammoInClip ? shellFullColor : shellEmptyColor;
         }
     }
 

@@ -827,6 +827,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1984047549842114155, guid: cba533c591646a340969993c9c6a5245, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1411438578562449398}
+    - targetCorrespondingSourceObject: {fileID: 1984047549842114155, guid: cba533c591646a340969993c9c6a5245, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 8794638639956636904}
   m_SourcePrefab: {fileID: 100100000, guid: cba533c591646a340969993c9c6a5245, type: 3}
 --- !u!4 &496029074420800508 stripped
 Transform:
@@ -852,6 +855,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   counterTopPoint: {fileID: 5254113581861785828}
+--- !u!114 &8794638639956636904
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3512563471260037329}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7fa95f6d8831d264e8846617ed351659, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DeliveryCounterDishesVisual
+  stackPoint: {fileID: 5254113581861785828}
+  dishVisualPrefab: {fileID: 3582311524315637914, guid: f2157ea50535fad4c9c2acaeb684162b, type: 3}
+  offsetY: 0.1
 --- !u!4 &5254113581861785828 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7196115685733836382, guid: cba533c591646a340969993c9c6a5245, type: 3}

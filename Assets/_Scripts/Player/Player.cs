@@ -37,14 +37,8 @@ public class Player : NetworkBehaviour, IKitchenObjectParent
     private bool isWalking;
     private Vector3 lastInteractDir;
     private BaseCounter selectedCounter;
-    private PlayerShotDog shotDog;
 
     //---------------UNITY METHODS-----------------
-
-    private void Awake()
-    {
-        shotDog = GetComponent<PlayerShotDog>();
-    }
 
     public override void OnNetworkSpawn()
     {
@@ -95,12 +89,20 @@ public class Player : NetworkBehaviour, IKitchenObjectParent
     {
         if (!GameManager.Instance.IsGamePlaying())
             return;
+        bool isTableService = CustomerManager.Instance != null && CustomerManager.Instance.IsTableServiceMode();
+        if (isTableService && CustomerManager.Instance.IsCarryingDishes(OwnerClientId)
+            && !(selectedCounter is DeliveryCounter) && !(selectedCounter is CustomerTable))
+        {
+            //Hands are full with the dish stack: only the counter (more dishes) and the tables make sense
+            return;
+        }
+
         if (selectedCounter != null)
         {
             Debug.Log("Interacting with counter: " + selectedCounter.name);
             selectedCounter.Interact(this);
         }
-        else if (IsOwner && CustomerManager.Instance != null && HasKitchenObject()
+        else if (IsOwner && !isTableService && CustomerManager.Instance != null && HasKitchenObject()
             && GetKitchenObject().TryGetPlate(out PlateKitchenObject plateKitchenObject)
             && CustomerManager.Instance.HasCustomerInReach(transform.position))
         {
@@ -113,15 +115,16 @@ public class Player : NetworkBehaviour, IKitchenObjectParent
     {
         if (!GameManager.Instance.IsGamePlaying())
             return;
-        //Fire cuts on a cutting counter and shoots the ShotDog anywhere else
-        if (selectedCounter is CuttingCounter)
+        //Fire cuts on a cutting counter; anywhere else PlayerGun shoots (it listens to the same input)
+        if (IsFireUsedByCounter())
         {
             selectedCounter.InteractAlternate(this);
         }
-        else if (shotDog != null)
-        {
-            shotDog.TryFire();
-        }
+    }
+
+    public bool IsFireUsedByCounter()
+    {
+        return selectedCounter is CuttingCounter;
     }
 
     private void Update()

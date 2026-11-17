@@ -6,7 +6,7 @@ using UnityEngine;
 //Server-authoritative rush simulation (GDD sections 4-7).
 //The server owns every customer and mirrors a compact snapshot into a NetworkList at a fixed rate;
 //clients render those snapshots with CustomerVisual, so no customer prefab needs to be network-registered.
-public class CustomerManager : NetworkBehaviour
+public class CustomerManager : NetworkBehaviour, IWeaponTarget
 {
     public const int RAGE_MAX = 120;
     private const int RAGE_FAMINTO = 30;
@@ -26,6 +26,12 @@ public class CustomerManager : NetworkBehaviour
         public Vector3 position;
     }
 
+    //Fired on every client when a customer reaches the counter or its order leaves the queue
+    public event EventHandler OnOrderListChanged;
+
+    //Table service: fired on every client when a dish appears at the counter, moves to a tray or is served
+    public event EventHandler OnDishesChanged;
+
     public event EventHandler OnBurst;
     public event EventHandler OnRushHourStarted;
 
@@ -44,8 +50,22 @@ public class CustomerManager : NetworkBehaviour
     [SerializeField] private Transform servicePoint;
     [SerializeField] private Transform[] spawnPoints;
     [SerializeField] private CartHealth cartHealth;
+    [Tooltip("How far from the cart surface attackers stop, so they don't clip into the truck")]
+    [SerializeField] private float attackStandOff = 0.6f;
     [Tooltip("Local-only visual, must NOT have a NetworkObject")]
     [SerializeField] private CustomerVisual customerVisualPrefab;
+
+    [Header("Tables")]
+    [Tooltip("Seats come from each table's CustomerPoints. Empty = half rings in front of the service point")]
+    [SerializeField] private CustomerTable[] tables;
+    [Tooltip("How many dishes a waiter can stack")]
+    [SerializeField] private int trayCapacity = 3;
+    [Tooltip("Where customers without a free seat wait, measured from the service point along its forward")]
+    [SerializeField] private float overflowDistance = 2.5f;
+
+    [Header("Dev")]
+    [Tooltip("Editor only: use the multiplayer table service (counter -> tray -> table) even in singleplayer")]
+    [SerializeField] private bool devForceTableService;
 
     [Header("Day phases")]
     [Tooltip("Fraction of the match after which the calm period ends and the Rush Hour begins")]
@@ -82,6 +102,8 @@ public class CustomerManager : NetworkBehaviour
 
     //---------------NETWORK VARIABLES-----------------
     private NetworkList<CustomerData> customerNetworkList;
+    //Table service dishes, in the order they were cooked (index 0 = oldest). Changes rarely, so the server edits it directly
+    private NetworkList<DishData> dishNetworkList;
     private NetworkVariable<int> customersServed = new NetworkVariable<int>(0);
     private NetworkVariable<int> customersFedByGun = new NetworkVariable<int>(0);
     private NetworkVariable<bool> isRushHour = new NetworkVariable<bool>(false);
@@ -99,6 +121,7 @@ public class CustomerManager : NetworkBehaviour
         public Vector3 knockback;
         public int slot = -1;
         public Vector3 exitPosition;
+        public ushort orderTicket;
 
         public float Rage => Mathf.Clamp(hunger + anger, 0f, RAGE_MAX);
     }
@@ -108,13 +131,32 @@ public class CustomerManager : NetworkBehaviour
     private readonly HashSet<ushort> seenIdSet = new HashSet<ushort>();
     private readonly List<ushort> staleIdList = new List<ushort>();
     private Vector3[] slotPositions;
+    private int[] slotTableIndex; //-1 for the half-ring fallback
     private bool[] slotOccupied;
+    private readonly List<DishInfo> dishInfoList = new List<DishInfo>();
+
+    public struct DishInfo
+    {
+        public ushort dishId;
+        public RecipeSO recipeSO;
+        public DishState state;
+        public ulong carrierClientId;
+    }
     private ushort nextCustomerId;
+    private ushort nextDishId;
+    private ushort nextOrderTicket;
+    private readonly List<CustomerData> orderDataList = new List<CustomerData>();
+    private readonly List<ushort> orderIdList = new List<ushort>();
+    private readonly List<ushort> previousOrderIdList = new List<ushort>();
+    private readonly List<RecipeSO> orderRecipeSOList = new List<RecipeSO>();
     private float spawnTimer = 2f;
     private float burstTimer;
     private float syncTimer;
     private const float SYNC_INTERVAL = 0.1f;
     private const float KNOCKBACK_STUN = 0.3f;
+    //Furious customers attack the closest point of any collider under this tag, so a bigger truck just needs tagged colliders
+    private const string FOOD_TRUCK_TAG = "FoodTruck";
+    private readonly List<Collider> cartColliderList = new List<Collider>();
     private RushEconomy rushEconomy;
 
     //---------------UNITY METHODS-----------------
@@ -122,6 +164,7 @@ public class CustomerManager : NetworkBehaviour
     {
         Instance = this;
         customerNetworkList = new NetworkList<CustomerData>();
+        dishNetworkList = new NetworkList<DishData>();
         rushEconomy = GetComponent<RushEconomy>();
     }
 
@@ -129,6 +172,55 @@ public class CustomerManager : NetworkBehaviour
     {
         BuildSlots();
         isRushHour.OnValueChanged += IsRushHour_OnValueChanged;
+        dishNetworkList.OnListChanged += DishNetworkList_OnListChanged;
+        RebuildDishInfoList();
+
+        if (IsServer)
+        {
+            NetworkManager.Singleton.OnClientDisconnectCallback += NetworkManager_OnClientDisconnectCallback;
+            CollectCartColliders();
+        }
+    }
+
+    //shortcut: collected once at spawn, re-run this if truck parts are added/enabled mid-match
+    private void CollectCartColliders()
+    {
+        cartColliderList.Clear();
+        foreach (GameObject cartPart in GameObject.FindGameObjectsWithTag(FOOD_TRUCK_TAG))
+        {
+            foreach (Collider collider in cartPart.GetComponents<Collider>())
+            {
+                //ClosestPoint only supports Box/Sphere/Capsule and convex Mesh colliders
+                if (collider is MeshCollider meshCollider && !meshCollider.convex)
+                {
+                    Debug.LogWarning($"{cartPart.name}: non-convex MeshCollider ignored for cart attacks", cartPart);
+                    continue;
+                }
+                cartColliderList.Add(collider);
+            }
+        }
+    }
+
+    //A waiter who drops out puts their dishes back on the counter
+    private void NetworkManager_OnClientDisconnectCallback(ulong clientId)
+    {
+        for (int i = 0; i < dishNetworkList.Count; i++)
+        {
+            DishData dishData = dishNetworkList[i];
+            if (dishData.State == DishState.OnTray && dishData.carrier == clientId)
+            {
+                dishData.state = (byte)DishState.AtCounter;
+                dishNetworkList[i] = dishData;
+            }
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        if (IsServer && NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.OnClientDisconnectCallback -= NetworkManager_OnClientDisconnectCallback;
+        }
     }
 
     private void IsRushHour_OnValueChanged(bool previousValue, bool newValue)
@@ -258,11 +350,22 @@ public class CustomerManager : NetworkBehaviour
         {
             ServerCustomer customer = serverCustomerList[i];
 
-            if (customer.phase != CustomerPhase.Leaving)
+            //Stress only builds while standing at the counter waiting for the order
+            if (customer.phase == CustomerPhase.Waiting)
             {
                 //Capped so a hot dog to the face still makes a visible difference to long-waiting customers
                 customer.hunger = Mathf.Min(RAGE_MAX, customer.hunger + hungerPerSecond * deltaTime);
+            }
+
+            if (customer.phase != CustomerPhase.Leaving)
+            {
                 UpdatePhaseFromMood(customer);
+            }
+
+            //Standing in the overflow: grab a seat as soon as one frees up
+            if (customer.slot < 0 && (customer.phase == CustomerPhase.WalkingIn || customer.phase == CustomerPhase.Waiting))
+            {
+                customer.slot = ClaimSlot();
             }
 
             Vector3 target = GetTarget(customer, servicePosition);
@@ -288,6 +391,11 @@ public class CustomerManager : NetworkBehaviour
                     if (distanceToTarget < 0.2f)
                     {
                         customer.phase = CustomerPhase.Waiting;
+                        if (customer.orderTicket == 0 && customer.slot >= 0)
+                        {
+                            //First time seated: the order is registered in arrival order
+                            customer.orderTicket = ++nextOrderTicket;
+                        }
                     }
                     break;
                 case CustomerPhase.Waiting:
@@ -323,14 +431,16 @@ public class CustomerManager : NetworkBehaviour
 
         if (isFurious && customer.phase != CustomerPhase.Attacking)
         {
-            //Gives up on the line and goes after the cart
-            ReleaseSlot(customer);
+            //Gets up and goes after the cart. The seat stays theirs, so they can come back to it
             customer.phase = CustomerPhase.Attacking;
         }
         else if (!isFurious && customer.phase == CustomerPhase.Attacking)
         {
-            //Calmed down (e.g. ate some hot dog), goes back to the line
-            customer.slot = ClaimSlot();
+            //Calmed down (e.g. ate some hot dog), goes back to their seat
+            if (customer.slot < 0)
+            {
+                customer.slot = ClaimSlot();
+            }
             customer.phase = CustomerPhase.WalkingIn;
         }
     }
@@ -342,11 +452,58 @@ public class CustomerManager : NetworkBehaviour
             case CustomerPhase.Leaving:
                 return customer.exitPosition;
             case CustomerPhase.Attacking:
-                return servicePosition;
+                return GetAttackPosition(customer.position, servicePosition);
             default:
-                //Every slot taken: crowd around the back of the line
-                return customer.slot >= 0 ? slotPositions[customer.slot] : slotPositions[slotPositions.Length - 1];
+                //Every seat taken: crowd in front of the service point
+                return customer.slot >= 0 ? slotPositions[customer.slot] : GetOverflowPosition(servicePosition);
         }
+    }
+
+    //Each attacker goes for the side of the truck closest to them, so the mob surrounds it
+    private Vector3 GetAttackPosition(Vector3 customerPosition, Vector3 servicePosition)
+    {
+        Vector3 closestPoint = servicePosition;
+        float closestDistance = float.MaxValue;
+        foreach (Collider cartCollider in cartColliderList)
+        {
+            if (cartCollider == null || !cartCollider.enabled)
+            {
+                continue;
+            }
+            Vector3 point = cartCollider.ClosestPoint(customerPosition);
+            float distance = FlatDistance(point, customerPosition);
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestPoint = point;
+            }
+        }
+        if (closestDistance == float.MaxValue)
+        {
+            //No tagged colliders: fall back to the service point
+            return servicePosition;
+        }
+
+        Vector3 away = customerPosition - closestPoint;
+        away.y = 0f;
+        if (away.sqrMagnitude > 0.0001f)
+        {
+            closestPoint += away.normalized * attackStandOff;
+        }
+        closestPoint.y = servicePosition.y;
+        return closestPoint;
+    }
+
+    private Vector3 GetOverflowPosition(Vector3 servicePosition)
+    {
+        Vector3 outward = servicePoint.forward;
+        outward.y = 0f;
+        return servicePosition + outward.normalized * overflowDistance;
+    }
+
+    private static bool IsSeated(ServerCustomer customer)
+    {
+        return customer.slot >= 0 && customer.phase == CustomerPhase.Waiting;
     }
 
     private void SeparateCustomers()
@@ -359,6 +516,11 @@ public class CustomerManager : NetworkBehaviour
             {
                 ServerCustomer a = serverCustomerList[i];
                 ServerCustomer b = serverCustomerList[j];
+                if (IsSeated(a) && IsSeated(b))
+                {
+                    //Seats around a table are closer than minDistance; don't push people off their chairs
+                    continue;
+                }
                 Vector3 delta = b.position - a.position;
                 delta.y = 0f;
                 float distance = delta.magnitude;
@@ -403,6 +565,8 @@ public class CustomerManager : NetworkBehaviour
             recipeIndex = (byte)customer.recipeIndex,
             rage = (byte)Mathf.RoundToInt(customer.Rage),
             stunned = customer.stunTimer > 0f,
+            orderTicket = customer.orderTicket,
+            slot = customer.slot >= 0 ? (byte)customer.slot : CustomerData.NO_SLOT,
         };
     }
 
@@ -419,8 +583,19 @@ public class CustomerManager : NetworkBehaviour
     //Half rings in front of the service point, filled from the inside out
     private void BuildSlots()
     {
+        if (tables != null && tables.Length > 0)
+        {
+            BuildTableSlots();
+            return;
+        }
+
         slotPositions = new Vector3[maxCustomers];
+        slotTableIndex = new int[maxCustomers];
         slotOccupied = new bool[maxCustomers];
+        for (int i = 0; i < maxCustomers; i++)
+        {
+            slotTableIndex[i] = -1;
+        }
 
         Vector3 outward = servicePoint.forward;
         outward.y = 0f;
@@ -437,6 +612,29 @@ public class CustomerManager : NetworkBehaviour
                 slotPositions[slotIndex++] = servicePoint.position + Quaternion.Euler(0f, angle, 0f) * outward * radius;
             }
         }
+    }
+
+    //One seat per CustomerPoint, in table order (table 1 seats first)
+    private void BuildTableSlots()
+    {
+        List<Vector3> positionList = new List<Vector3>();
+        List<int> tableIndexList = new List<int>();
+        for (int t = 0; t < tables.Length; t++)
+        {
+            foreach (Transform customerPoint in tables[t].GetCustomerPoints())
+            {
+                Vector3 seatPosition = customerPoint.position;
+                seatPosition.y = servicePoint.position.y;
+                positionList.Add(seatPosition);
+                tableIndexList.Add(t);
+            }
+        }
+
+        //CustomerData.slot is a byte and NO_SLOT is reserved
+        int seatCount = Mathf.Min(positionList.Count, CustomerData.NO_SLOT);
+        slotPositions = positionList.GetRange(0, seatCount).ToArray();
+        slotTableIndex = tableIndexList.GetRange(0, seatCount).ToArray();
+        slotOccupied = new bool[seatCount];
     }
 
     private int ClaimSlot()
@@ -505,6 +703,23 @@ public class CustomerManager : NetworkBehaviour
                 ReactionClientRpc(customer.id, Reaction.WrongOrder, customer.position);
             }
         }
+        else if (IsTableServiceMode())
+        {
+            //Table service: any valid recipe goes on the counter as a free dish; the waiters decide where it goes
+            if (recipeIndex >= 0)
+            {
+                dishNetworkList.Add(new DishData
+                {
+                    id = nextDishId++,
+                    recipeIndex = (byte)recipeIndex,
+                    state = (byte)DishState.AtCounter,
+                });
+            }
+            else
+            {
+                ReactionClientRpc(ushort.MaxValue, Reaction.DeliveryFailed, servicePoint.position);
+            }
+        }
         else
         {
             //GDD "Servir": the counter serves whoever is closest to snapping first
@@ -546,6 +761,126 @@ public class CustomerManager : NetworkBehaviour
             customersFedByGun.Value++;
         }
         ReactionClientRpc(customer.id, byGun ? Reaction.FedByGun : Reaction.Fed, customer.position);
+    }
+
+    //---------------TABLE SERVICE (multiplayer)-----------------
+    //Single player keeps the direct counter delivery; the dev toggle forces this flow without a second instance
+    public bool IsTableServiceMode()
+    {
+        if (tables == null || tables.Length == 0)
+        {
+            return false;
+        }
+#if UNITY_EDITOR
+        if (devForceTableService)
+        {
+            return true;
+        }
+#endif
+        return GameManagerMultiplayer.playMultiplayer;
+    }
+
+    //Waiter takes the oldest dish from the counter onto their tray
+    public void PickUpDish(Player player)
+    {
+        PickUpDishServerRpc(new NetworkObjectReference(player.NetworkObject));
+    }
+
+    [Rpc(SendTo.Server)]
+    private void PickUpDishServerRpc(NetworkObjectReference playerReference, RpcParams rpcParams = default)
+    {
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        if (!playerReference.TryGet(out NetworkObject playerNetworkObject)) return;
+        Player player = playerNetworkObject.GetComponent<Player>();
+        if (player == null || player.OwnerClientId != clientId || player.HasKitchenObject()) return;
+        if (GetTrayCount(clientId) >= trayCapacity) return;
+
+        //The list is in cooking order, so the first one at the counter is the oldest
+        for (int i = 0; i < dishNetworkList.Count; i++)
+        {
+            DishData dishData = dishNetworkList[i];
+            if (dishData.State == DishState.AtCounter)
+            {
+                dishData.state = (byte)DishState.OnTray;
+                dishData.carrier = clientId;
+                dishNetworkList[i] = dishData;
+                return;
+            }
+        }
+    }
+
+    //Serves every dish on the player's tray that someone seated at this table ordered.
+    //Dishes nobody here wants stay on the tray for another table
+    public void ServeTable(CustomerTable table, Player player)
+    {
+        int tableIndex = Array.IndexOf(tables, table);
+        if (tableIndex < 0)
+        {
+            Debug.LogWarning($"{table.name} is not in CustomerManager's tables list");
+            return;
+        }
+        ServeTableServerRpc(tableIndex, new NetworkObjectReference(player.NetworkObject));
+    }
+
+    [Rpc(SendTo.Server)]
+    private void ServeTableServerRpc(int tableIndex, NetworkObjectReference playerReference, RpcParams rpcParams = default)
+    {
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        if (!playerReference.TryGet(out NetworkObject playerNetworkObject)) return;
+        Player player = playerNetworkObject.GetComponent<Player>();
+        if (player == null || player.OwnerClientId != clientId) return;
+
+        //Backwards because served dishes are removed from the list
+        for (int i = dishNetworkList.Count - 1; i >= 0; i--)
+        {
+            DishData dishData = dishNetworkList[i];
+            if (dishData.State != DishState.OnTray || dishData.carrier != clientId)
+            {
+                continue;
+            }
+
+            ServerCustomer customer = FindCustomerAtTable(tableIndex, dishData.recipeIndex);
+            if (customer != null)
+            {
+                //FeedCustomer sets them to Leaving, so the next dish can't pick the same customer
+                FeedCustomer(customer);
+                dishNetworkList.RemoveAt(i);
+            }
+        }
+    }
+
+    //Who at this table receives a dish of this recipe (null = nobody here ordered it)
+    private ServerCustomer FindCustomerAtTable(int tableIndex, int recipeIndex)
+    {
+        //The angriest one gets it first: the waiter puts out the fire closest to reaching the truck
+        ServerCustomer angriestCustomer = null;
+        foreach (ServerCustomer customer in serverCustomerList)
+        {
+            //IsSeated, not just slot >= 0: furious customers keep their seat while they're away attacking the truck
+            if (!IsSeated(customer) || slotTableIndex[customer.slot] != tableIndex || customer.recipeIndex != recipeIndex)
+            {
+                continue;
+            }
+
+            if (angriestCustomer == null || customer.Rage > angriestCustomer.Rage)
+            {
+                angriestCustomer = customer;
+            }
+        }
+        return angriestCustomer;
+    }
+
+    private int GetTrayCount(ulong clientId)
+    {
+        int count = 0;
+        foreach (DishData dishData in dishNetworkList)
+        {
+            if (dishData.State == DishState.OnTray && dishData.carrier == clientId)
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     private int FindRecipeIndex(List<KitchenObjectSO> plateKitchenObjectSOList)
@@ -606,9 +941,10 @@ public class CustomerManager : NetworkBehaviour
     }
 
     //---------------FEEDING BY GUN (Alimentar na bala)-----------------
-    //Server only. Every hungry customer inside the cone is fully fed (and pushed back); returns how many were fed.
+    //Server only. Every customer inside the cone is pushed back and loses hungerReduction of hunger (anger untouched);
+    //only the ones whose hunger reaches 0 are fed and leave. Returns how many were fed.
     //Customers already leaving only get knocked around.
-    public int ApplyConeBlast(Vector3 origin, Vector3 direction, float range, float halfAngle, float knockbackForce)
+    public int ApplyConeBlast(Vector3 origin, Vector3 direction, float range, float halfAngle, float knockbackForce, float hungerReduction)
     {
         direction.y = 0f;
         direction.Normalize();
@@ -629,13 +965,21 @@ public class CustomerManager : NetworkBehaviour
             customer.knockback += pushDirection * knockbackForce * falloff;
             customer.stunTimer = KNOCKBACK_STUN;
 
-            if (customer.phase != CustomerPhase.Leaving)
+            if (customer.phase == CustomerPhase.Leaving)
+            {
+                ReactionClientRpc(customer.id, Reaction.Hit, customer.position);
+                continue;
+            }
+
+            customer.hunger = Mathf.Max(0f, customer.hunger - hungerReduction);
+            if (customer.hunger <= 0f)
             {
                 FeedCustomer(customer, true);
                 fedCount++;
             }
             else
             {
+                //Still hungry: stays (a furious one may calm down and return to the line, see UpdatePhaseFromMood)
                 ReactionClientRpc(customer.id, Reaction.Hit, customer.position);
             }
         }
@@ -683,8 +1027,10 @@ public class CustomerManager : NetworkBehaviour
                 customerVisual = Instantiate(customerVisualPrefab, customerData.position, Quaternion.identity);
                 customerVisualDictionary.Add(customerData.id, customerVisual);
             }
-            customerVisual.SetData(customerData, GetRecipeName(customerData.recipeIndex));
+            customerVisual.SetData(customerData, GetRecipeSO(customerData.recipeIndex), GetSeatLookTarget(customerData));
         }
+
+        UpdateOrderList();
 
         staleIdList.Clear();
         foreach (ushort id in customerVisualDictionary.Keys)
@@ -701,10 +1047,133 @@ public class CustomerManager : NetworkBehaviour
         }
     }
 
-    //---------------PUBLIC API-----------------
-    public string GetRecipeName(int recipeIndex)
+    //---------------ORDER QUEUE (every client)-----------------
+    //Rebuilt from the replicated snapshot; the event only fires when the queue actually changes,
+    //so DeliveryManagerUI doesn't recreate its templates every frame
+    private void UpdateOrderList()
     {
-        return recipeIndex < recipeSOList.Count ? recipeSOList[recipeIndex].recipeName : "?";
+        orderDataList.Clear();
+        foreach (CustomerData customerData in customerNetworkList)
+        {
+            if (HasOpenOrder(customerData))
+            {
+                orderDataList.Add(customerData);
+            }
+        }
+        orderDataList.Sort((a, b) => a.orderTicket.CompareTo(b.orderTicket));
+
+        orderIdList.Clear();
+        foreach (CustomerData customerData in orderDataList)
+        {
+            orderIdList.Add(customerData.id);
+        }
+
+        if (!IsSameIdList(orderIdList, previousOrderIdList))
+        {
+            previousOrderIdList.Clear();
+            previousOrderIdList.AddRange(orderIdList);
+
+            orderRecipeSOList.Clear();
+            foreach (CustomerData customerData in orderDataList)
+            {
+                orderRecipeSOList.Add(GetRecipeSO(customerData.recipeIndex));
+            }
+            OnOrderListChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private static bool HasOpenOrder(CustomerData customerData)
+    {
+        if (customerData.orderTicket == 0 && customerData.Phase != CustomerPhase.Waiting)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    //Seated customers face the center of their table
+    private Vector3? GetSeatLookTarget(CustomerData customerData)
+    {
+        if (customerData.Phase != CustomerPhase.Waiting || customerData.slot == CustomerData.NO_SLOT
+            || slotTableIndex == null || customerData.slot >= slotTableIndex.Length)
+        {
+            return null;
+        }
+        int tableIndex = slotTableIndex[customerData.slot];
+        return tableIndex >= 0 ? tables[tableIndex].GetCenter() : (Vector3?)null;
+    }
+
+    //Dishes only change on cook / pick up / serve / disconnect, so the NetworkList event is enough (no per-frame diff)
+    private void DishNetworkList_OnListChanged(NetworkListEvent<DishData> changeEvent)
+    {
+        RebuildDishInfoList();
+        OnDishesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RebuildDishInfoList()
+    {
+        dishInfoList.Clear();
+        foreach (DishData dishData in dishNetworkList)
+        {
+            dishInfoList.Add(new DishInfo
+            {
+                dishId = dishData.id,
+                recipeSO = GetRecipeSO(dishData.recipeIndex),
+                state = dishData.State,
+                carrierClientId = dishData.carrier,
+            });
+        }
+    }
+
+    private static bool IsSameIdList(List<ushort> a, List<ushort> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
+    }
+
+    //---------------PUBLIC API-----------------
+    public RecipeSO GetRecipeSO(int recipeIndex)
+    {
+        return recipeIndex < recipeSOList.Count ? recipeSOList[recipeIndex] : null;
+    }
+
+    //Recipes of the customers who already reached the counter, in arrival order
+    public List<RecipeSO> GetOrderRecipeSOList()
+    {
+        return orderRecipeSOList;
+    }
+
+    //Dishes waiting on the DeliveryCounter, oldest first
+    public void GetCounterDishes(List<DishInfo> resultList)
+    {
+        resultList.Clear();
+        foreach (DishInfo dishInfo in dishInfoList)
+        {
+            if (dishInfo.state == DishState.AtCounter) resultList.Add(dishInfo);
+        }
+    }
+
+    //Dishes stacked on this player's tray, oldest first
+    public void GetTrayDishes(ulong clientId, List<DishInfo> resultList)
+    {
+        resultList.Clear();
+        foreach (DishInfo dishInfo in dishInfoList)
+        {
+            if (dishInfo.state == DishState.OnTray && dishInfo.carrierClientId == clientId) resultList.Add(dishInfo);
+        }
+    }
+
+    public bool IsCarryingDishes(ulong clientId)
+    {
+        foreach (DishInfo dishInfo in dishInfoList)
+        {
+            if (dishInfo.state == DishState.OnTray && dishInfo.carrierClientId == clientId) return true;
+        }
+        return false;
     }
 
     public int GetCustomersServed()

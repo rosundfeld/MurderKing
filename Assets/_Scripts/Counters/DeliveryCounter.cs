@@ -30,5 +30,10 @@ public class DeliveryCounter : BaseCounter
                 KitchenObject.DestroyKitchenObject(player.GetKitchenObject());
             }
         }
+        else if (CustomerManager.Instance != null && CustomerManager.Instance.IsTableServiceMode())
+        {
+            //Empty hands: the waiter stacks one ready dish per interaction
+            CustomerManager.Instance.PickUpDish(player);
+        }
     }
 }

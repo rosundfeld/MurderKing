@@ -47,6 +47,8 @@ GameObject:
   - component: {fileID: 5187191851792630908}
   - component: {fileID: 3048305089117373157}
   - component: {fileID: 8794809605963402645}
+  - component: {fileID: 6984148109626056941}
+  - component: {fileID: 2247770463644537352}
   m_Layer: 7
   m_Name: Player
   m_TagString: Untagged
@@ -240,18 +242,46 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerShotDog
   ShowTopMostFoldoutHeaderGroup: 1
+  player: {fileID: 2747076481474918895}
+  weaponSOList:
+  - {fileID: 11400000, guid: bece63fd984df87478275d41420b3bd5, type: 2}
+  - {fileID: 11400000, guid: 2320f5cff5d83954c9fb780a3364c7ff, type: 2}
+  - {fileID: 11400000, guid: ccf38b21dce1890409094430e690e983, type: 2}
   ammoSourceList:
   - kitchenObjectSO: {fileID: 11400000, guid: 4b38b79921d3ca04598adf5226cedca2, type: 2}
     shells: 3
   - kitchenObjectSO: {fileID: 11400000, guid: 149343dcab798fb4c801dd38ea94bd5f, type: 2}
     shells: 2
-  magazineSize: 36
-  startingShells: 6
-  cooldown: 0.7
-  range: 7
-  halfAngle: 30
-  knockbackForce: 16
-  pelletCount: 7
+--- !u!114 &6984148109626056941
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1414773685668319751}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2483ee0011d978e4484b879ece6f9fd8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerGunVisuals
+  playerGun: {fileID: 8794809605963402645}
+  muzzleFlash: {fileID: 0}
+--- !u!114 &2247770463644537352
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1414773685668319751}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b7b1c1c81ba5ec4d82a8c56ed2bce33, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDishStackVisual
+  stackPoint: {fileID: 1166858164641074374}
+  dishVisualPrefab: {fileID: 3582311524315637914, guid: f2157ea50535fad4c9c2acaeb684162b, type: 3}
+  offsetY: 0.1
+  player: {fileID: 2747076481474918895}
 --- !u!1001 &1619204532472540100
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -6,6 +6,7 @@ public class CartHealthUI : MonoBehaviour
 {
     [SerializeField] private Image healthBarImage;
     [SerializeField] private Gradient healthColorGradient;
+    [SerializeField] private TextMeshProUGUI healthText;
 
     private void Update()
     {
@@ -13,5 +14,6 @@ public class CartHealthUI : MonoBehaviour
 
         healthBarImage.fillAmount = healthNormalized;
         healthBarImage.color = healthColorGradient.Evaluate(healthNormalized);
+        healthText.text = Mathf.CeilToInt(CartHealth.Instance.GetHealthPercentage()).ToString();
     }
 }

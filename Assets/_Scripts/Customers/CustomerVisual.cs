@@ -15,19 +15,22 @@ public class CustomerVisual : MonoBehaviour
         new Color(0.85f, 0.15f, 0.15f), //Furioso
         new Color(0.45f, 0.10f, 0.40f), //Colapso
     };
-    private static readonly string[] MoodLabels = { "Normal", "Faminto", "DESESPERADO", "FURIOSO!", "COLAPSO!!" };
     private static readonly float[] MoodShake = { 0f, 0.01f, 0.03f, 0.06f, 0.1f };
     private static readonly float[] MoodLean = { 0f, 6f, 14f, 22f, 30f };
 
     [SerializeField] private Transform body;
     [SerializeField] private Renderer bodyRenderer;
     [SerializeField] private Renderer[] eyeRenderers;
-    [SerializeField] private TextMeshPro overheadText;
+    [Tooltip("Reaction popups only (Obrigado!, AI!...). Mood is shown by color, shake and lean")]
+    [SerializeField] private TextMeshProUGUI overheadText;
+    [Tooltip("World Space canvas showing the order (recipe name + ingredient icons)")]
+    [SerializeField] private DeliveryManagerSingleUI orderUI;
     private MaterialPropertyBlock propertyBlock;
 
     private CustomerData data;
-    private string recipeName;
+    private RecipeSO recipeSO;
     private Vector3 targetPosition;
+    private Vector3? lookTarget;
     private string popupText;
     private float popupTimer;
     private float punchTimer;
@@ -37,11 +40,21 @@ public class CustomerVisual : MonoBehaviour
         propertyBlock = new MaterialPropertyBlock();
     }
 
-    public void SetData(CustomerData data, string recipeName)
+    //lookTarget: table center while seated, null = face where they walk
+    public void SetData(CustomerData data, RecipeSO recipeSO, Vector3? lookTarget)
     {
         this.data = data;
-        this.recipeName = recipeName;
+        this.lookTarget = lookTarget;
         targetPosition = data.position;
+
+        //Called every frame by CustomerManager, so the icons are only rebuilt when the order changes
+        if (this.recipeSO != recipeSO && recipeSO != null)
+        {
+            this.recipeSO = recipeSO;
+            orderUI.SetRecipeSO(recipeSO);
+        }
+        //Fed customers no longer need to show what they want
+        orderUI.gameObject.SetActive(data.Phase != CustomerPhase.Leaving);
     }
 
     public void PlayReaction(CustomerManager.Reaction reaction)
@@ -78,9 +91,11 @@ public class CustomerVisual : MonoBehaviour
 
         Vector3 moveDirection = transform.position - previousPosition;
         moveDirection.y = 0f;
-        if (moveDirection.sqrMagnitude > 0.00001f && !data.stunned)
+        Vector3 faceDirection = lookTarget.HasValue ? lookTarget.Value - transform.position : moveDirection;
+        faceDirection.y = 0f;
+        if (faceDirection.sqrMagnitude > 0.00001f && !data.stunned)
         {
-            transform.forward = Vector3.Slerp(transform.forward, moveDirection.normalized, Time.deltaTime * 10f);
+            transform.forward = Vector3.Slerp(transform.forward, faceDirection.normalized, Time.deltaTime * 10f);
         }
 
         //Fed customers instantly regain their composure
@@ -101,26 +116,13 @@ public class CustomerVisual : MonoBehaviour
             eyeRenderer.SetPropertyBlock(propertyBlock);
         }
 
-        UpdateOverheadText(moodIndex);
+        UpdateOverheadText();
     }
 
-    private void UpdateOverheadText(int moodIndex)
+    private void UpdateOverheadText()
     {
         popupTimer -= Time.deltaTime;
-        if (popupTimer > 0f)
-        {
-            overheadText.text = popupText;
-        }
-        else if (data.Phase == CustomerPhase.Leaving)
-        {
-            overheadText.text = "";
-        }
-        else
-        {
-            int filled = Mathf.RoundToInt(data.rage / (float)CustomerManager.RAGE_MAX * 10f);
-            string colorHex = ColorUtility.ToHtmlStringRGB(MoodColors[moodIndex]);
-            overheadText.text = $"<b>{recipeName}</b>\n<color=#{colorHex}>{MoodLabels[moodIndex]}\n{new string('|', filled)}<alpha=#44>{new string('|', 10 - filled)}</color>";
-        }
+        overheadText.text = popupTimer > 0f ? popupText : "";
     }
 
     private void LateUpdate()

@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 //One-click setup for the rush POC: wires CustomerManager/CartHealth/RushEconomy into the Game scene
-//and adds the ShotDog to the Player prefab. Safe to run again: it reuses what already exists.
+//and adds the PlayerGun (with its default weapons) to the Player prefab. Safe to run again: it reuses what already exists.
 public static class RushPocSetup
 {
     private const string GAME_SCENE_PATH = "Assets/Scenes/Game.unity";
@@ -15,6 +15,9 @@ public static class RushPocSetup
     private const string RECIPE_LIST_PATH = "Assets/ScriptableObjects/RecipeSO/_RecipeListSO.asset";
     private const string MEAT_COOKED_PATH = "Assets/ScriptableObjects/KitchenObjectsSO/MeatPattyCooked.asset";
     private const string MEAT_BURNED_PATH = "Assets/ScriptableObjects/KitchenObjectsSO/MeatPattyBurned.asset";
+
+    private const string WEAPON_FOLDER_PARENT = "Assets/ScriptableObjects";
+    private const string WEAPON_FOLDER_NAME = "WeaponSO";
 
     private const float SERVICE_POINT_DISTANCE = 2.5f;
     private const float SPAWN_RADIUS = 22f;
@@ -116,9 +119,27 @@ public static class RushPocSetup
     private static void SetupPlayerPrefab()
     {
         GameObject playerRoot = PrefabUtility.LoadPrefabContents(PLAYER_PREFAB_PATH);
-        PlayerShotDog shotDog = GetOrAdd<PlayerShotDog>(playerRoot);
+        PlayerGun playerGun = GetOrAdd<PlayerGun>(playerRoot);
 
-        SerializedObject serializedShotDog = new SerializedObject(shotDog);
+        SerializedObject serializedShotDog = new SerializedObject(playerGun);
+        serializedShotDog.FindProperty("player").objectReferenceValue = playerRoot.GetComponent<Player>();
+
+        SerializedProperty weaponSOList = serializedShotDog.FindProperty("weaponSOList");
+        if (weaponSOList.arraySize == 0)
+        {
+            SetObjectList(weaponSOList, new WeaponSO[]
+            {
+                //Same numbers the ShotDog had before the weapons became data
+                GetOrCreateWeaponSO<ShotgunSO>("ShotDog", weaponSO => { weaponSO.pelletCount = 7; weaponSO.pelletSpreadAngle = 30f; weaponSO.hungerReduction = 40f; }),
+                GetOrCreateWeaponSO<PistolSO>("Pistola", weaponSO => { weaponSO.clipSize = 8; weaponSO.startingAmmo = 8; weaponSO.fireRate = 3f; weaponSO.range = 10f; weaponSO.knockbackForce = 6f; weaponSO.hungerReduction = 20f; }),
+                GetOrCreateWeaponSO<RocketLauncherSO>("LancaFoguete", weaponSO => { weaponSO.clipSize = 1; weaponSO.startingAmmo = 1; weaponSO.fireRate = 0.5f; weaponSO.range = 8f; weaponSO.knockbackForce = 24f; }),
+            });
+        }
+
+        SerializedObject serializedGunVisuals = new SerializedObject(GetOrAdd<PlayerGunVisuals>(playerRoot));
+        serializedGunVisuals.FindProperty("playerGun").objectReferenceValue = playerGun;
+        serializedGunVisuals.ApplyModifiedPropertiesWithoutUndo();
+
         SerializedProperty ammoSourceList = serializedShotDog.FindProperty("ammoSourceList");
         if (ammoSourceList.arraySize == 0)
         {
@@ -130,6 +151,24 @@ public static class RushPocSetup
 
         PrefabUtility.SaveAsPrefabAsset(playerRoot, PLAYER_PREFAB_PATH);
         PrefabUtility.UnloadPrefabContents(playerRoot);
+    }
+
+    private static T GetOrCreateWeaponSO<T>(string assetName, System.Action<T> configure) where T : WeaponSO
+    {
+        string path = $"{WEAPON_FOLDER_PARENT}/{WEAPON_FOLDER_NAME}/{assetName}.asset";
+        T weaponSO = AssetDatabase.LoadAssetAtPath<T>(path);
+        if (weaponSO == null)
+        {
+            if (!AssetDatabase.IsValidFolder($"{WEAPON_FOLDER_PARENT}/{WEAPON_FOLDER_NAME}"))
+            {
+                AssetDatabase.CreateFolder(WEAPON_FOLDER_PARENT, WEAPON_FOLDER_NAME);
+            }
+            weaponSO = ScriptableObject.CreateInstance<T>();
+            weaponSO.weaponName = assetName;
+            configure(weaponSO);
+            AssetDatabase.CreateAsset(weaponSO, path);
+        }
+        return weaponSO;
     }
 
     private static void AddAmmoSource(SerializedProperty ammoSourceList, KitchenObjectSO kitchenObjectSO, int shells)

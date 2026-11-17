@@ -33,11 +33,15 @@ public class GameInput : MonoBehaviour
     public event EventHandler OnInteractAction;
     public event EventHandler OnFireAction;
     public event EventHandler OnReloadAction;
+    public event EventHandler OnWeaponSwapAction;
     public event EventHandler OnPauseAction;
     public event EventHandler OnBindingRebind;
 
     //---------------PRIVATE VARIABLES-----------------
     private PlayerInputActions playerInputActions;
+    private bool lastFireFromGamepad;
+    //shortcut: bound in code, so it can't be rebound in the options menu; move it into the PlayerInputActions asset when that matters
+    private readonly InputAction weaponSwapAction = new InputAction("WeaponSwap", InputActionType.Button, "<Keyboard>/q");
 
     //---------------UNITY METHODS-----------------
 
@@ -57,6 +61,9 @@ public class GameInput : MonoBehaviour
         playerInputActions.Player.Reload.performed += Reload_performed;
         playerInputActions.Player.Pause.performed += Pause_performed;
 
+        weaponSwapAction.AddBinding("<Gamepad>/rightShoulder");
+        weaponSwapAction.performed += WeaponSwap_performed;
+        weaponSwapAction.Enable();
     }
 
     private void OnDestroy()
@@ -68,6 +75,12 @@ public class GameInput : MonoBehaviour
 
         playerInputActions.Player.Disable();
         playerInputActions.Dispose();
+        weaponSwapAction.Dispose();
+    }
+
+    private void WeaponSwap_performed(UnityEngine.InputSystem.InputAction.CallbackContext obj)
+    {
+        OnWeaponSwapAction?.Invoke(this, EventArgs.Empty);
     }
 
     private void Pause_performed(UnityEngine.InputSystem.InputAction.CallbackContext obj)
@@ -82,12 +95,25 @@ public class GameInput : MonoBehaviour
 
     private void Fire_performed(UnityEngine.InputSystem.InputAction.CallbackContext obj)
     {
+        lastFireFromGamepad = obj.control.device is Gamepad;
         OnFireAction?.Invoke(this, EventArgs.Empty);
     }
 
     private void Reload_performed(UnityEngine.InputSystem.InputAction.CallbackContext obj)
     {
         OnReloadAction?.Invoke(this, EventArgs.Empty);
+    }
+
+    //False when the last shot came from a gamepad, which has no cursor to aim with
+    public bool TryGetAimScreenPosition(out Vector2 screenPosition)
+    {
+        screenPosition = default;
+        if (lastFireFromGamepad || Mouse.current == null)
+        {
+            return false;
+        }
+        screenPosition = Mouse.current.position.ReadValue();
+        return true;
     }
 
     public Vector2 GetMovementVectorNormalized()

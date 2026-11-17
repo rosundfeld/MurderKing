@@ -71,4 +71,9 @@ public class CartHealth : NetworkBehaviour
     {
         return health.Value / maxHealth;
     }
+
+     public float GetHealthPercentage()
+    {
+        return health.Value / maxHealth * 100f;
+    }
 }

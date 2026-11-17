@@ -15,5 +15,6 @@ public class ResetStaticDataManager : MonoBehaviour
         BaseCounter.ResetStaticData();
         TrashCounter.ResetStaticData();
         Player.ResetStaticData();
+        PlayerGun.ResetStaticData();
     }
 }

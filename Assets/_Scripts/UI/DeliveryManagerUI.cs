@@ -15,9 +15,22 @@ public class DeliveryManagerUI : MonoBehaviour
 
     private void Start()
     {
-        DeliveryManager.Instance.OnRecipeSpawned += DeliveryManager_OnRecipeSpawned;
-        DeliveryManager.Instance.OnRecipeCompleted += DeliveryManager_OnRecipeCompleted;
+        //In rush mode the orders are the customers waiting at the counter, in arrival order
+        if (CustomerManager.Instance != null)
+        {
+            CustomerManager.Instance.OnOrderListChanged += CustomerManager_OnOrderListChanged;
+        }
+        else
+        {
+            DeliveryManager.Instance.OnRecipeSpawned += DeliveryManager_OnRecipeSpawned;
+            DeliveryManager.Instance.OnRecipeCompleted += DeliveryManager_OnRecipeCompleted;
+        }
 
+        UpdateVisual();
+    }
+
+    private void CustomerManager_OnOrderListChanged(object sender, System.EventArgs e)
+    {
         UpdateVisual();
     }
 
@@ -39,12 +52,15 @@ public class DeliveryManagerUI : MonoBehaviour
             Destroy(child.gameObject);
         }
 
-        foreach (RecipeSO recipeSO in DeliveryManager.Instance.GetWaitingRecipeSOList())
+        List<RecipeSO> recipeSOList = CustomerManager.Instance != null
+            ? CustomerManager.Instance.GetOrderRecipeSOList()
+            : DeliveryManager.Instance.GetWaitingRecipeSOList();
+
+        foreach (RecipeSO recipeSO in recipeSOList)
         {
             Transform recipeTransform = Instantiate(recipeTemplate, container);
             recipeTransform.gameObject.SetActive(true);
             recipeTransform.GetComponent<DeliveryManagerSingleUI>().SetRecipeSO(recipeSO);
-            
         }
     }
 }
